@@ -60,8 +60,8 @@ wrangler deploy
 
 | 服务地址 | 平台 |
 |----------|------|
-| `https://qwen2api-v.smanx.xx.kg` | 开启联网搜索 |
-| `https://qwen2api-n.smanx.xx.kg` | 未开联网搜索 |
+| `https://qwen2api-v.smanx.xx.kg` | Vercel |
+| `https://qwen2api-n.smanx.xx.kg` | Netlify |
 
 - 无需 API Token（密钥为空）
 - 建议自行部署以获得更稳定的服务

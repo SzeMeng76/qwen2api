@@ -60,8 +60,8 @@ Two public services are available for testing:
 
 | Service URL | Platform |
 |-------------|----------|
-| `https://qwen2api-v.smanx.xx.kg` | With web search enabled |
-| `https://qwen2api-n.smanx.xx.kg` | Without web search |
+| `https://qwen2api-v.smanx.xx.kg` | Vercel |
+| `https://qwen2api-n.smanx.xx.kg` | Netlify |
 
 - No API Token required (leave key empty)
 - Self-deployment is recommended for more stable service
