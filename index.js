@@ -5,8 +5,8 @@ const app = express();
 app.use(express.json());
 
 // 从环境变量或直接配置获取 JWT Token
-const AUTH_TOKEN = process.env.QWEN_TOKEN || `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjhkMTE4ZjI3LWFlNzItNDBhZC05YjIwLTY0MWMzZDAxMWVkMiIsImxhc3RfcGFzc3dvcmRfY2hhbmdlIjoxNzcyMzA0MjExLCJleHAiOjE3NzQ4OTY2NDB9.hCR1c8MfUWyIbNtrvON8jA80CyAExabdCCZDvkL_mRA`;
-// const AUTH_TOKEN = process.env.QWEN_TOKEN 
+// const AUTH_TOKEN = process.env.QWEN_TOKEN || `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjhkMTE4ZjI3LWFlNzItNDBhZC05YjIwLTY0MWMzZDAxMWVkMiIsImxhc3RfcGFzc3dvcmRfY2hhbmdlIjoxNzcyMzA0MjExLCJleHAiOjE3NzQ4OTY2NDB9.hCR1c8MfUWyIbNtrvON8jA80CyAExabdCCZDvkL_mRA`;
+const AUTH_TOKEN = process.env.QWEN_TOKEN 
 // 延迟加载 baxia-token 模块
 let baxiaModule = null;
 
@@ -125,8 +125,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     
     console.log('[API] Got baxia tokens:', { bxUaLength: bxUa.length, bxUmidToken: bxUmidToken.substring(0, 20) + '...', bxV });
     
-    // 先创建新的 chat 会话
-    console.log('[API] Creating new chat session...');
+    // 先创建新的 chat 会话 (guest 模式，不需要登录)
+    console.log('[API] Creating new chat session (guest mode)...');
     const createChatBody = {
       title: '新建对话',
       models: [actualModel],
@@ -142,7 +142,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       'bx-ua': bxUa,
       'bx-umidtoken': bxUmidToken,
       'bx-v': bxV,
-      'Cookie': `token=${AUTH_TOKEN}`,
       'Referer': 'https://chat.qwen.ai/c/guest',
       'source': 'web',
       'timezone': new Date().toUTCString(),
@@ -227,7 +226,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       'timezone': new Date().toUTCString(),
       'x-accel-buffering': 'no',
       'x-request-id': uuidv4(),
-      'Cookie': `token=${AUTH_TOKEN}`,
+      'Cookie': '',
       'Referer': 'https://chat.qwen.ai/c/guest',
     };
     
