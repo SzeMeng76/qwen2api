@@ -293,6 +293,117 @@ function normalizeInputString(value) {
   return trimmed;
 }
 
+function normalizeReasoningFragments(value) {
+  if (typeof value === 'string') {
+    const text = normalizeReasoningString(value);
+    return text ? [text] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      const text = normalizeReasoningString(item);
+      if (text) out.push(text);
+    } else if (item && typeof item === 'object') {
+      const text = normalizeReasoningString(item.text || item.content || item.value);
+      if (text) out.push(text);
+    }
+  }
+  return out;
+}
+
+function normalizeReasoningString(value) {
+  if (typeof value !== 'string') return '';
+  const lowered = value.trim().toLowerCase();
+  if (lowered === '[undefined]' || lowered === 'undefined' || lowered === '[null]' || lowered === 'null') {
+    return '';
+  }
+  return value;
+}
+
+function extractReasoningContentFromDelta(delta) {
+  if (!delta || typeof delta !== 'object') return '';
+  const direct = normalizeReasoningString(delta.reasoning_content || delta.reasoning || '');
+  if (direct) return direct;
+  const phase = typeof delta.phase === 'string' ? delta.phase : '';
+  if (phase !== 'thinking_summary') return '';
+  const thoughtContent = normalizeReasoningFragments(delta?.extra?.summary_thought?.content);
+  if (thoughtContent.length > 0) return thoughtContent.join('\n');
+  return '';
+}
+
+function mapUpstreamDeltaToOpenAI(delta) {
+  if (!delta || typeof delta !== 'object') return null;
+  const mapped = {};
+  if (typeof delta.role === 'string') mapped.role = delta.role;
+  if (typeof delta.content === 'string') mapped.content = delta.content;
+  const reasoningContent = extractReasoningContentFromDelta(delta);
+  if (reasoningContent) mapped.reasoning_content = reasoningContent;
+  return Object.keys(mapped).length > 0 ? mapped : null;
+}
+
+function parseQwenSsePayload(rawPayload) {
+  const payload = typeof rawPayload === 'string' ? rawPayload : '';
+  const events = [];
+  const contentParts = [];
+  const reasoningParts = [];
+  let usage = null;
+
+  for (const line of payload.split('\n')) {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed?.usage && typeof parsed.usage === 'object') {
+        usage = parsed.usage;
+      }
+      const upstreamDelta = parsed?.choices?.[0]?.delta;
+      const delta = mapUpstreamDeltaToOpenAI(upstreamDelta);
+      const finishReason = parsed?.choices?.[0]?.finish_reason || null;
+      if (delta || finishReason) {
+        events.push({ delta: delta || {}, finish_reason: finishReason });
+      }
+      if (delta?.content) contentParts.push(delta.content);
+      if (delta?.reasoning_content) reasoningParts.push(delta.reasoning_content);
+    } catch (parseError) {
+      void parseError;
+    }
+  }
+
+  return {
+    events,
+    content: contentParts.join(''),
+    reasoning_content: reasoningParts.join(''),
+    usage,
+  };
+}
+
+function mapUsageToOpenAI(usage) {
+  const inputTokens = Number(usage?.input_tokens || 0);
+  const outputTokens = Number(usage?.output_tokens || 0);
+  const totalTokens = Number(usage?.total_tokens || (inputTokens + outputTokens));
+  const mapped = {
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: totalTokens,
+  };
+  const inputDetails = usage?.input_tokens_details && typeof usage.input_tokens_details === 'object'
+    ? { ...usage.input_tokens_details }
+    : null;
+  const outputDetails = usage?.output_tokens_details && typeof usage.output_tokens_details === 'object'
+    ? { ...usage.output_tokens_details }
+    : null;
+  if (inputDetails && Object.keys(inputDetails).length > 0) {
+    mapped.prompt_tokens_details = inputDetails;
+  }
+  if (outputDetails && Object.keys(outputDetails).length > 0) {
+    mapped.completion_tokens_details = outputDetails;
+  }
+  return mapped;
+}
+
 function decodeUtf8(bytes) {
   try {
     return new TextDecoder('utf-8', { fatal: false }).decode(bytes || new Uint8Array());
@@ -975,38 +1086,27 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
   // 默认：收集完整响应
   const reader = chatResp.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', chunks = [];
+  let buffer = '';
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
   }
-  for (const line of buffer.split('\n')) {
-    const trimmed = line.trimStart();
-    if (!trimmed.startsWith('data:')) continue;
-    const data = trimmed.slice(5).trim();
-    if (data === '[DONE]') continue;
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.choices?.[0]?.delta?.content) {
-        chunks.push(parsed.choices[0].delta.content);
-      }
-    } catch {}
-  }
+  const parsedSse = parseQwenSsePayload(buffer);
   logChatDetail('core', 'chat.completion.collected', {
-    chunkCount: chunks.length,
-    outputLength: chunks.join('').length,
+    chunkCount: parsedSse.events.length,
+    outputLength: parsedSse.content.length,
     stream: !!stream,
   });
   logChatDetail('core', 'stream.content.full', {
-    content: chunks.join(''),
+    content: parsedSse.content,
   });
 
   if (stream) {
-    logChatDetail('core', 'stream.repack.start', { chunkCount: chunks.length });
-    const streamBody = chunks.map((c, i) => `data: ${JSON.stringify({
+    logChatDetail('core', 'stream.repack.start', { chunkCount: parsedSse.events.length });
+    const streamBody = parsedSse.events.map((event) => `data: ${JSON.stringify({
       id: responseId, object: 'chat.completion.chunk', created, model: actualModel,
-      choices: [{ index: 0, delta: { content: c }, finish_reason: i === chunks.length - 1 ? 'stop' : null }]
+      choices: [{ index: 0, delta: event.delta, finish_reason: event.finish_reason || null }]
     })}\n\n`).join('') + 'data: [DONE]\n\n';
     logChatDetail('core', 'stream.repack.done', { responseId });
     return createStreamResponse(streamBody);
@@ -1014,8 +1114,8 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
 
   return createResponse({
     id: responseId, object: 'chat.completion', created, model: actualModel,
-    choices: [{ index: 0, message: { role: 'assistant', content: chunks.join('') }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    choices: [{ index: 0, message: { role: 'assistant', content: parsedSse.content, ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}) }, finish_reason: 'stop' }],
+    usage: mapUsageToOpenAI(parsedSse.usage)
   });
 }
 
@@ -1382,8 +1482,8 @@ function createLogStreamWriter(writer, onDone = null) {
               continue;
             }
 
-            const delta = parsed?.choices?.[0]?.delta;
-            if (delta && typeof delta === 'object') {
+            const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+            if (delta || parsed?.choices?.[0]?.finish_reason) {
               const chunk = {
                 id: responseId,
                 object: 'chat.completion.chunk',
@@ -1391,10 +1491,7 @@ function createLogStreamWriter(writer, onDone = null) {
                 model,
                 choices: [{
                   index: 0,
-                  delta: {
-                    ...(typeof delta.role === 'string' ? { role: delta.role } : {}),
-                    ...(typeof delta.content === 'string' ? { content: delta.content } : {}),
-                  },
+                  delta: delta || {},
                   finish_reason: parsed?.choices?.[0]?.finish_reason || null,
                 }],
               };
@@ -1666,43 +1763,32 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
   // 非 Express 环境：收集完整响应
   const reader = chatResp.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', chunks = [];
+  let buffer = '';
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
   }
-  for (const line of buffer.split('\n')) {
-    const trimmed = line.trimStart();
-    if (!trimmed.startsWith('data:')) continue;
-    const data = trimmed.slice(5).trim();
-    if (data === '[DONE]') continue;
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.choices?.[0]?.delta?.content) {
-        chunks.push(parsed.choices[0].delta.content);
-      }
-    } catch {}
-  }
+  const parsedSse = parseQwenSsePayload(buffer);
 
   logChatDetail('core', 'chat.completion.collected', {
-    chunkCount: chunks.length,
-    outputLength: chunks.join('').length,
+    chunkCount: parsedSse.events.length,
+    outputLength: parsedSse.content.length,
     stream: !!stream,
   });
   logChatDetail('core', 'stream.content.full', {
-    content: chunks.join(''),
+    content: parsedSse.content,
   });
-  sendLog('chat.completed', { outputLength: chunks.join('').length });
+  sendLog('chat.completed', { outputLength: parsedSse.content.length });
 
   // 清理临时视频文件
   cleanupTempFiles();
 
   if (stream) {
-    logChatDetail('core', 'stream.repack.start', { chunkCount: chunks.length });
-    const streamBody = chunks.map((c, i) => `data: ${JSON.stringify({
+    logChatDetail('core', 'stream.repack.start', { chunkCount: parsedSse.events.length });
+    const streamBody = parsedSse.events.map((event) => `data: ${JSON.stringify({
       id: responseId, object: 'chat.completion.chunk', created, model: actualModel,
-      choices: [{ index: 0, delta: { content: c }, finish_reason: i === chunks.length - 1 ? 'stop' : null }]
+      choices: [{ index: 0, delta: event.delta, finish_reason: event.finish_reason || null }]
     })}\n\n`).join('') + 'data: [DONE]\n\n';
     logChatDetail('core', 'stream.repack.done', { responseId });
     return createStreamResponse(streamBody);
@@ -1710,8 +1796,8 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
 
   return createResponse({
     id: responseId, object: 'chat.completion', created, model: actualModel,
-    choices: [{ index: 0, message: { role: 'assistant', content: chunks.join('') }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    choices: [{ index: 0, message: { role: 'assistant', content: parsedSse.content, ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}) }, finish_reason: 'stop' }],
+    usage: mapUsageToOpenAI(parsedSse.usage)
   });
 }
 
@@ -1728,5 +1814,8 @@ module.exports = {
   createResponse,
   validateToken,
   getBaxiaTokens,
+  mapUpstreamDeltaToOpenAI,
+  parseQwenSsePayload,
+  mapUsageToOpenAI,
   uuidv4,
 };

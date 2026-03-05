@@ -200,6 +200,114 @@ function normalizeInputString(value) {
   return trimmed;
 }
 
+function normalizeReasoningFragments(value) {
+  if (typeof value === 'string') {
+    const text = normalizeReasoningString(value);
+    return text ? [text] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      const text = normalizeReasoningString(item);
+      if (text) out.push(text);
+    } else if (item && typeof item === 'object') {
+      const text = normalizeReasoningString(item.text || item.content || item.value);
+      if (text) out.push(text);
+    }
+  }
+  return out;
+}
+
+function normalizeReasoningString(value) {
+  if (typeof value !== 'string') return '';
+  const lowered = value.trim().toLowerCase();
+  if (lowered === '[undefined]' || lowered === 'undefined' || lowered === '[null]' || lowered === 'null') {
+    return '';
+  }
+  return value;
+}
+
+function extractReasoningContentFromDelta(delta) {
+  if (!delta || typeof delta !== 'object') return '';
+  const direct = normalizeReasoningString(delta.reasoning_content || delta.reasoning || '');
+  if (direct) return direct;
+  const phase = typeof delta.phase === 'string' ? delta.phase : '';
+  if (phase !== 'thinking_summary') return '';
+  const fromSummary = normalizeReasoningFragments(delta?.extra?.summary_thought?.content);
+  if (fromSummary.length > 0) return fromSummary.join('\n');
+  return '';
+}
+
+function mapUpstreamDeltaToOpenAI(delta) {
+  if (!delta || typeof delta !== 'object') return null;
+  const mapped = {};
+  if (typeof delta.role === 'string') mapped.role = delta.role;
+  if (typeof delta.content === 'string') mapped.content = delta.content;
+  const reasoningContent = extractReasoningContentFromDelta(delta);
+  if (reasoningContent) mapped.reasoning_content = reasoningContent;
+  return Object.keys(mapped).length > 0 ? mapped : null;
+}
+
+function parseQwenSsePayload(rawPayload) {
+  const payload = typeof rawPayload === 'string' ? rawPayload : '';
+  const events = [];
+  const contentParts = [];
+  const reasoningParts = [];
+  let usage = null;
+
+  for (const line of payload.split('\n')) {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed?.usage && typeof parsed.usage === 'object') usage = parsed.usage;
+      const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+      const finishReason = parsed?.choices?.[0]?.finish_reason || null;
+      if (delta || finishReason) {
+        events.push({ delta: delta || {}, finish_reason: finishReason });
+      }
+      if (delta?.content) contentParts.push(delta.content);
+      if (delta?.reasoning_content) reasoningParts.push(delta.reasoning_content);
+    } catch (parseError) {
+      void parseError;
+    }
+  }
+
+  return {
+    events,
+    content: contentParts.join(''),
+    reasoning_content: reasoningParts.join(''),
+    usage,
+  };
+}
+
+function mapUsageToOpenAI(usage) {
+  const inputTokens = Number(usage?.input_tokens || 0);
+  const outputTokens = Number(usage?.output_tokens || 0);
+  const totalTokens = Number(usage?.total_tokens || (inputTokens + outputTokens));
+  const mapped = {
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: totalTokens,
+  };
+  const inputDetails = usage?.input_tokens_details && typeof usage.input_tokens_details === 'object'
+    ? { ...usage.input_tokens_details }
+    : null;
+  const outputDetails = usage?.output_tokens_details && typeof usage.output_tokens_details === 'object'
+    ? { ...usage.output_tokens_details }
+    : null;
+  if (inputDetails && Object.keys(inputDetails).length > 0) {
+    mapped.prompt_tokens_details = inputDetails;
+  }
+  if (outputDetails && Object.keys(outputDetails).length > 0) {
+    mapped.completion_tokens_details = outputDetails;
+  }
+  return mapped;
+}
+
 function decodeUtf8(bytes) {
   try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes || new Uint8Array()); }
   catch { return ''; }
@@ -741,7 +849,15 @@ async function handleChatCompletions(body, authHeader, env) {
 
             try {
               const parsed = JSON.parse(data);
-              if (parsed.choices?.[0]?.delta?.content) {
+              if (parsed?.error) {
+                const errObj = typeof parsed.error === 'string'
+                  ? { error: { message: parsed.error, type: 'api_error' } }
+                  : { error: parsed.error };
+                await writer.write(encoder.encode(`data: ${JSON.stringify(errObj)}\n\n`));
+                continue;
+              }
+              const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+              if (delta || parsed.choices?.[0]?.finish_reason) {
                 const chunk = {
                   id: responseId,
                   object: 'chat.completion.chunk',
@@ -749,26 +865,15 @@ async function handleChatCompletions(body, authHeader, env) {
                   model: actualModel,
                   choices: [{
                     index: 0,
-                    delta: { content: parsed.choices[0].delta.content },
+                    delta: delta || {},
                     finish_reason: parsed.choices[0].finish_reason || null
                   }]
                 };
                 await writer.write(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-              } else if (parsed.choices?.[0]?.finish_reason) {
-                const chunk = {
-                  id: responseId,
-                  object: 'chat.completion.chunk',
-                  created,
-                  model: actualModel,
-                  choices: [{
-                    index: 0,
-                    delta: {},
-                    finish_reason: parsed.choices[0].finish_reason
-                  }]
-                };
-                await writer.write(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
               }
-            } catch {}
+            } catch (streamParseError) {
+              void streamParseError;
+            }
           }
         }
       } catch (err) {
@@ -796,31 +901,22 @@ async function handleChatCompletions(body, authHeader, env) {
   // 非流式响应 - 收集完整内容
   const reader = chatResp.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', chunks = [];
+  let buffer = '';
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
   }
-  for (const line of buffer.split('\n')) {
-    const trimmed = line.trimStart();
-    if (!trimmed.startsWith('data:')) continue;
-    const data = trimmed.slice(5).trim();
-    if (data === '[DONE]') continue;
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.choices?.[0]?.delta?.content) chunks.push(parsed.choices[0].delta.content);
-    } catch {}
-  }
+  const parsedSse = parseQwenSsePayload(buffer);
   logChatDetail('cloudflare-worker', 'chat.completion.collected', {
-    chunkCount: chunks.length,
-    outputLength: chunks.join('').length,
+    chunkCount: parsedSse.events.length,
+    outputLength: parsedSse.content.length,
   });
 
   return jsonResponse({
     id: responseId, object: 'chat.completion', created, model: actualModel,
-    choices: [{ index: 0, message: { role: 'assistant', content: chunks.join('') }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    choices: [{ index: 0, message: { role: 'assistant', content: parsedSse.content, ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}) }, finish_reason: 'stop' }],
+    usage: mapUsageToOpenAI(parsedSse.usage)
   });
 }
 

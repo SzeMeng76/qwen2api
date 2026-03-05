@@ -4,7 +4,7 @@
  * 支持: Docker (Express) / Vercel / Netlify
  */
 
-const { handleModels, handleChatCompletions, handleChatCompletionsWithLogs, handleRoot, handleChatPage, createResponse, validateToken, uuidv4 } = require('./core.js');
+const { handleModels, handleChatCompletions, handleChatCompletionsWithLogs, handleRoot, handleChatPage, createResponse, validateToken, uuidv4, mapUpstreamDeltaToOpenAI } = require('./core.js');
 
 function logRequestPathBegin(runtime, path) {
   console.log(`[qwen2api][${runtime}][request.begin] path=${path}`);
@@ -143,9 +143,9 @@ function createExpressStreamHandler(res) {
               continue;
             }
 
-            const delta = parsed?.choices?.[0]?.delta;
-            if (delta && typeof delta === 'object') {
-              if (typeof delta.content === 'string' && delta.content) {
+            const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+            if (delta || parsed?.choices?.[0]?.finish_reason) {
+              if (delta && typeof delta.content === 'string' && delta.content) {
                 writeStreamContent(delta.content);
               }
               const chunk = {
@@ -155,10 +155,7 @@ function createExpressStreamHandler(res) {
                 model,
                 choices: [{
                   index: 0,
-                  delta: {
-                    ...(typeof delta.role === 'string' ? { role: delta.role } : {}),
-                    ...(typeof delta.content === 'string' ? { content: delta.content } : {}),
-                  },
+                  delta: delta || {},
                   finish_reason: parsed?.choices?.[0]?.finish_reason || null,
                 }],
               };
