@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  qwen2api:
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourusername/qwen2api}:latest
+    # 或者使用本地构建:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: qwen2api
+    restart: unless-stopped
+    ports:
+      - "8765:7860"
+    environment:
+      # API Token 认证 (可选，多个token用逗号分隔)
+      - API_TOKENS=${API_TOKENS:-}
+
+      # Node.js 环境
+      - NODE_ENV=production
+      - PORT=7860
+
+      # 日志配置 (可选)
+      - CHAT_DETAIL_LOG=${CHAT_DETAIL_LOG:-false}
+
+      # 请求体大小限制 (可选)
+      - JSON_BODY_LIMIT=${JSON_BODY_LIMIT:-10mb}
+
+      # 视频分辨率限制 (可选)
+      - MIN_VIDEO_RESOLUTION=${MIN_VIDEO_RESOLUTION:-720}
+
+      # 时区设置
+      - TZ=Asia/Shanghai
+    volumes:
+      # 如果需要持久化缓存或日志，可以挂载卷
+      # - ./data:/app/data
+      # - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:7860/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - qwen2api-network
+    # 资源限制 (可选)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  qwen2api-network:
+    driver: bridge
+
+# 如果需要使用 Nginx 反向代理
+# services:
+#   nginx:
+#     image: nginx:alpine
+#     container_name: qwen2api-nginx
+#     restart: unless-stopped
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+#       - ./ssl:/etc/nginx/ssl:ro
+#     depends_on:
+#       - qwen2api
+#     networks:
+#       - qwen2api-network
