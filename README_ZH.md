@@ -2,305 +2,357 @@
 
 中文 | [English](README.md)
 
-将 Qwen Chat 转换为 OpenAI 兼容的 API 代理服务。
+将通义千问（Qwen Chat）转换为 OpenAI 兼容的 API 代理服务。
 
-## 功能特性
+## ✨ 功能特性
 
-- 🔄 OpenAI API 兼容格式
-- 🚀 支持流式响应 (SSE)
-- 🔐 可选的 API Token 认证
-- 🌐 多平台部署支持
-- 🖼️ 支持图片生成
-- 🎬📄 支持视频解析、图片与文档解析
-- 💬 内置 Web 聊天界面
+- 🔄 **OpenAI API 兼容** - 完全兼容 OpenAI API 格式
+- 🚀 **流式响应** - 支持 SSE 实时流式输出
+- 🔐 **Token 认证** - 可选的 API 密钥保护
+- 🌐 **多平台部署** - Docker、Vercel、Netlify、Cloudflare Workers
+- 🖼️ **图片生成** - 文生图功能
+- 🎬 **多模态** - 视频分析、图片理解、文档解析
+- 💬 **Web 界面** - 内置聊天界面
+- 🔧 **工具调用** - 支持 MCP (Model Context Protocol)
 
-## 部署方式
+## 📋 支持的模型
 
-### Docker
+| 模型 ID | 名称 | 能力 | 上下文长度 |
+|---------|------|------|-----------|
+| `qwen3.5-plus` | Qwen3.5-Plus | 文本、视觉、文档、视频、音频、思考、搜索 | 100万 tokens |
+| `qwen3.5-flash` | Qwen3.5-Flash | 文本、视觉、文档、视频、音频、思考、搜索 | 100万 tokens |
+| `qwen3.5-397b-a17b` | Qwen3.5-397B-A17B | 文本、视觉、文档、视频、音频、思考、搜索 | 26.2万 tokens |
+
+**所有模型均支持：**
+- 📝 文本生成
+- 👁️ 图片理解（视觉）
+- 📄 文档解析（PDF、DOCX 等）
+- 🎬 视频分析
+- 🎵 音频处理
+- 🧠 思考模式（链式思考）
+- 🔍 网络搜索
+- 🛠️ 工具调用（MCP）
+
+**默认模型：** `qwen3.5-plus`
+
+## 🚀 快速开始
+
+### Docker（推荐）
 
 ```bash
-# 构建镜像
+# 从 GitHub Container Registry 拉取镜像
+docker pull ghcr.io/YOUR_USERNAME/qwen2api:latest
+
+# 使用 docker-compose 运行
+docker-compose up -d
+
+# 或直接运行
+docker run -d \
+  -p 8765:7860 \
+  -e API_TOKENS=your_secret_token \
+  ghcr.io/YOUR_USERNAME/qwen2api:latest
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  qwen2api:
+    image: ghcr.io/YOUR_USERNAME/qwen2api:latest
+    ports:
+      - "8765:7860"
+    environment:
+      - API_TOKENS=your_secret_token
+      - CHAT_DETAIL_LOG=false
+    restart: unless-stopped
+```
+
+### 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/YOUR_USERNAME/qwen2api.git
+cd qwen2api
+
+# 构建 Docker 镜像
 docker build -t qwen2api .
 
 # 运行容器
-docker run -d -p 8765:8765 -e API_TOKENS=your_token qwen2api
+docker run -d -p 8765:7860 -e API_TOKENS=your_token qwen2api
 ```
+
+## 🌐 其他部署方式
 
 ### Vercel
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/smanx/qwen2api)
 
 1. Fork 本仓库
-2. 在 Vercel 中导入项目
-3. 可选：设置环境变量 `API_TOKENS`
+2. 导入到 Vercel
+3. 设置环境变量 `API_TOKENS`（可选）
 
 ### Netlify
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/smanx/qwen2api)
 
 1. Fork 本仓库
-2. 在 Netlify 中导入项目
-3. 可选：设置环境变量 `API_TOKENS`
+2. 导入到 Netlify
+3. 设置环境变量 `API_TOKENS`（可选）
 
 ### Cloudflare Workers
 
 ```bash
-# 安装 wrangler
 npm install -g wrangler
-
-# 登录
 wrangler login
-
-# 部署
 wrangler deploy
 ```
 
-在 Cloudflare Dashboard 中设置环境变量 `API_TOKENS`。
+在 Cloudflare Dashboard 中设置 `API_TOKENS`。
 
-## 公共服务
-
-提供两个公共服务供测试使用：
-
-| 服务地址 | 平台 |
-|----------|------|
-| `https://qwen2api-n.smanx.xx.kg` | Netlify |
-| ~~`https://qwen2api-v.smanx.xx.kg`~~ | ~~Vercel~~ （使用超额已停机） |
-
-- 无需 API Token（密钥为空）
-- 建议自行部署以获得更稳定的服务
-
-## 注意事项
-
-- ✅ `/v1/chat/completions` 已支持附件与多模态消息（图片/文件/音频）。
-- ✅ 支持图片理解与文档解析流程（可在对话中直接使用）。
-- ⚠️ 附件会按 Qwen Web 的流程先上传到 Qwen OSS，文件较大时请求耗时会增加。
-
-### 限制说明（视频链接 / 大文件）
-
-- 通过视频链接分析、以及上传大文件进行分析：**不支持无服务器函数部署**（例如 Vercel / Netlify Functions / Cloudflare Workers）。
-  这类环境通常会受限于运行时长、请求体大小、以及文件系统/子进程能力。
-- 视频链接分析还需要宿主机安装 `yt-dlp` 工具。
-  如需使用该能力，请选择 Docker / 本地 Express 部署。
-
-### 附件兼容格式（OpenAI 风格）
-
-`messages[].content` 支持以下分段格式：
-
-- `{"type":"text","text":"..."}` / `{"type":"input_text","input_text":"..."}`
-- `{"type":"image_url","image_url":{"url":"https://..."}}`
-- `{"type":"input_image","image_url":"https://..."}`
-- `{"type":"file","file_data":"data:...base64,...","filename":"a.pdf"}`
-- `{"type":"input_file","file_data":"<base64>","filename":"a.txt"}`
-- `{"type":"audio","file_data":"https://..."}` / `{"type":"input_audio", ...}`
-
-另外也兼容消息级 `files` / `attachments` 传参。
-
-## 环境变量
-
-| 变量名 | 说明 | 必填 |
-|--------|------|------|
-| `API_TOKENS` | API 密钥，多个用逗号分隔 | 否 |
-| `CHAT_DETAIL_LOG` | 是否开启详细对话/上传日志（`true/1/on/yes` 开启，默认关闭） | 否 |
-| `JSON_BODY_LIMIT` | Express JSON 请求体大小上限（默认 `20mb`，仅本地/Docker 的 Express 运行时生效） | 否 |
-
-> **注意：** `ENABLE_SEARCH` 已不推荐使用。当前版本仍兼容读取该变量（`true` 时启用 `search`，否则使用 `t2t`），后续版本可能移除，请尽量不要依赖。
->
-> **安全提示（API_TOKENS）：** 如果未配置 `API_TOKENS`，服务将允许无鉴权访问所有接口（`/v1/models`、`/v1/chat/completions` 等）。公网部署时强烈建议设置至少一个 token，并通过 `Authorization: Bearer <token>` 访问。
-
-## 使用方法
-
-### API 端点
+## 📡 API 端点
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/v1/models` | GET | 获取模型列表 |
-| `/v1/chat/completions` | POST | 聊天完成 |
-| `/v1/images/generations` | POST | 图片生成 |
-| `/chat` | GET | 内置 Web 聊天页面 |
+| `/v1/chat/completions` | POST | 聊天完成（支持流式和非流式） |
+| `/v1/images/generations` | POST | 生成图片 |
+| `/chat` | GET | Web 聊天界面 |
 | `/` | GET | 健康检查 |
 
-### Web 聊天页面
+## 🔑 环境变量
 
-在浏览器打开 `https://your-domain/chat` 即可使用内置聊天 UI。
+| 变量 | 说明 | 默认值 | 必填 |
+|------|------|--------|------|
+| `API_TOKENS` | API 密钥（多个用逗号分隔） | - | 否 |
+| `PORT` | 服务端口 | 7860 | 否 |
+| `NODE_ENV` | Node 环境 | production | 否 |
+| `CHAT_DETAIL_LOG` | 启用详细日志（`true`/`false`） | false | 否 |
+| `JSON_BODY_LIMIT` | 请求体大小限制 | 10mb | 否 |
+| `MIN_VIDEO_RESOLUTION` | 最低视频分辨率 | 720 | 否 |
 
-- 支持流式输出、附件上传、可选视频链接（填写链接后发送会自动进入视频分析；留空为普通对话）
-- 可切换日志面板；开启后请求会使用 `/v1/chat/completions/log`
-- 顶部栏提供中英文切换
+⚠️ **安全警告：** 如果不设置 `API_TOKENS`，服务将公开访问。生产环境务必设置 Token。
 
-### 请求示例
+## 📖 使用示例
 
+### cURL
+
+#### 获取模型列表
 ```bash
-# 获取模型列表
-curl https://your-domain/v1/models \
+curl http://localhost:8765/v1/models \
   -H "Authorization: Bearer your_token"
+```
 
-# 聊天完成
-curl https://your-domain/v1/chat/completions \
+#### 聊天完成（非流式）
+```bash
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_token" \
   -d '{
     "model": "qwen3.5-plus",
-    "messages": [{"role": "user", "content": "Hello!"}],
+    "messages": [
+      {"role": "user", "content": "你好！介绍一下自己。"}
+    ]
+  }'
+```
+
+#### 聊天完成（流式）
+```bash
+curl http://localhost:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token" \
+  -d '{
+    "model": "qwen3.5-plus",
+    "messages": [
+      {"role": "user", "content": "写一首关于AI的诗"}
+    ],
     "stream": true
   }'
+```
 
-# 图片生成（比例字符串格式）
-curl https://your-domain/v1/images/generations \
+#### 图片生成
+```bash
+curl http://localhost:8765/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token" \
+  -d '{
+    "prompt": "一只可爱的猫咪在玩毛线球",
+    "model": "qwen3.5-plus",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+```
+
+#### 多模态（图片理解）
+```bash
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_token" \
   -d '{
     "model": "qwen3.5-plus",
-    "prompt": "一只可爱的小猫在花园里",
-    "n": 1,
-    "size": "1:1",
-    "response_format": "url"
-  }'
-
-# 图片生成（OpenAI 尺寸格式）
-curl https://your-domain/v1/images/generations \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_token" \
-  -d '{
-    "model": "qwen3.5-plus",
-    "prompt": "一片壮丽的山水风景",
-    "n": 1,
-    "size": "1024x1024",
-    "response_format": "b64_json"
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "这张图片里有什么？"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+      ]
+    }]
   }'
 ```
 
-### 图片生成参数说明
-
-#### 请求参数
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `model` | string | 否 | 模型名称，默认为 `qwen3.5-plus` |
-| `prompt` | string | 是 | 图片描述文本 |
-| `n` | number | 否 | 生成图片数量，默认为 1，最大 10 |
-| `size` | string | 否 | 图片尺寸/比例，默认为 `1:1` |
-| `response_format` | string | 否 | 响应格式：`url`（默认）或 `b64_json` |
-
-#### size 参数支持的格式
-
-**格式 1：比例字符串（推荐）**
-- `1:1` - 正方形
-- `16:9` - 宽屏（横向）
-- `9:16` - 竖屏（纵向）
-- `4:3` - 传统比例（横向）
-- `3:4` - 传统比例（纵向）
-
-**格式 2：OpenAI 兼容的尺寸格式**
-- `1024x1024` - 会自动映射到最接近的比例（1:1）
-- `1920x1080` - 会自动映射到最接近的比例（16:9）
-- 其他任何宽高组合都会自动映射到支持的比例
-
-#### 响应格式
-
-**url 格式（默认）：**
-```json
-{
-  "created": 1234567890,
-  "data": [
-    {
-      "url": "https://example.com/image.png"
-    }
-  ]
-}
-```
-
-**b64_json 格式：**
-```json
-{
-  "created": 1234567890,
-  "data": [
-    {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ..."
-    }
-  ]
-}
-```
-
-### OpenAI SDK 示例
+### Python（OpenAI SDK）
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     api_key="your_token",
-    base_url="https://your-domain/v1"
+    base_url="http://localhost:8765/v1"
 )
 
+# 聊天完成
 response = client.chat.completions.create(
     model="qwen3.5-plus",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[
+        {"role": "user", "content": "你好！"}
+    ]
+)
+print(response.choices[0].message.content)
+
+# 流式响应
+stream = client.chat.completions.create(
+    model="qwen3.5-plus",
+    messages=[{"role": "user", "content": "讲个故事"}],
     stream=True
 )
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
 
-for chunk in response:
-    print(chunk.choices[0].delta.content, end="")
+# 图片生成
+image = client.images.generate(
+    model="qwen3.5-plus",
+    prompt="美丽的日落",
+    n=1,
+    size="1024x1024"
+)
+print(image.data[0].url)
 ```
+
+### Node.js（OpenAI SDK）
 
 ```javascript
 import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: 'your_token',
-  baseURL: 'https://your-domain/v1'
+  baseURL: 'http://localhost:8765/v1'
 });
 
+// 聊天完成
+const response = await client.chat.completions.create({
+  model: 'qwen3.5-plus',
+  messages: [{ role: 'user', content: '你好！' }]
+});
+console.log(response.choices[0].message.content);
+
+// 流式响应
 const stream = await client.chat.completions.create({
   model: 'qwen3.5-plus',
-  messages: [{ role: 'user', content: 'Hello!' }],
+  messages: [{ role: 'user', content: '讲个故事' }],
   stream: true
 });
 
 for await (const chunk of stream) {
   process.stdout.write(chunk.choices[0]?.delta?.content || '');
 }
+
+// 图片生成
+const image = await client.images.generate({
+  model: 'qwen3.5-plus',
+  prompt: '美丽的日落',
+  n: 1,
+  size: '1024x1024'
+});
+console.log(image.data[0].url);
 ```
 
-## 支持的模型
+## 🌐 Web 聊天界面
 
-- `qwen3.5-plus`
-- `qwen3.5-flash`
-- `qwen3.5-turbo`
-- 以及 Qwen Chat 支持的其他模型
+访问内置聊天界面：`http://localhost:8765/chat`
 
-## 项目结构
+功能：
+- 💬 实时流式响应
+- 📎 文件附件（图片、文档、音频）
+- 🎬 视频 URL 分析
+- 📊 请求/响应日志面板
+- 🌍 多语言支持（中/英）
 
+## ⚠️ 限制说明
+
+### 视频分析和大文件
+
+**无服务器平台不支持**（Vercel、Netlify Functions、Cloudflare Workers）：
+- 视频 URL 分析需要 `yt-dlp`（仅 Docker/本地部署可用）
+- 大文件上传受无服务器平台限制
+- 完整功能请使用 Docker 部署
+
+### 各平台功能支持
+
+| 功能 | Docker | Vercel | Netlify | CF Workers |
+|------|--------|--------|---------|------------|
+| 文本对话 | ✅ | ✅ | ✅ | ✅ |
+| 图片理解 | ✅ | ✅ | ✅ | ✅ |
+| 文档解析 | ✅ | ✅ | ✅ | ✅ |
+| 图片生成 | ✅ | ✅ | ✅ | ✅ |
+| 视频分析 | ✅ | ❌ | ❌ | ❌ |
+| 大文件 (>10MB) | ✅ | ❌ | ❌ | ❌ |
+
+## 🔧 高级配置
+
+### 多模态消息格式
+
+API 支持 OpenAI 兼容的多模态消息：
+
+```json
+{
+  "messages": [{
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "描述这张图片"},
+      {"type": "image_url", "image_url": {"url": "https://..."}}
+    ]
+  }]
+}
 ```
-qwen2api/
-├── core.js              # 核心业务逻辑
-├── index.js             # Docker / 本地入口
-├── api/
-│   └── index.js         # Vercel 入口
-├── netlify/
-│   └── functions/
-│       └── api.js       # Netlify 入口
-├── worker.js            # Cloudflare Workers 入口
-├── Dockerfile
-├── vercel.json
-├── netlify.toml
-└── wrangler.toml
-```
 
-## 本地开发
+支持的内容类型：
+- `text` - 纯文本
+- `image_url` - 图片 URL 或 base64
+- `file` - 带 base64 数据的文档
+- `audio` - 音频文件 URL 或 base64
 
-```bash
-# 安装依赖
-npm install
+### 自定义请求头
 
-# 启动开发服务器
-npm run dev
+服务会转发以下请求头到 Qwen API：
+- `bx-ua` - 浏览器用户代理指纹
+- `bx-umidtoken` - 唯一设备令牌
+- `bx-v` - Baxia 版本
 
-# 服务运行在 http://localhost:8765
-```
+## 🤝 贡献
 
-## 免责声明
+欢迎贡献！请随时提交 Pull Request。
 
-本项目仅供学习和测试使用，请勿用于生产环境或商业用途。使用本项目所产生的一切后果由使用者自行承担，与项目作者无关。
+## 📄 许可证
 
-## License
+ISC License
 
-MIT
+## 🔗 相关链接
+
+- [通义千问官网](https://qwen.ai/)
+- [OpenAI API 文档](https://platform.openai.com/docs/api-reference)
+- [GitHub 仓库](https://github.com/smanx/qwen2api)
+
+## ⭐ Star History
+
+如果觉得这个项目有用，请给个 Star！

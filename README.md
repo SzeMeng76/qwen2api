@@ -1,320 +1,358 @@
----
-title: Qwen2API
-emoji: 🚀
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
----
-
 # Qwen2API
 
 [中文文档](README_ZH.md) | English
 
-A proxy service that converts Qwen Chat to an OpenAI-compatible API.
+A proxy service that converts Qwen Chat to an OpenAI-compatible API format.
 
-## Features
+## ✨ Features
 
-- 🔄 OpenAI API compatible format
-- 🚀 Streaming response support (SSE)
-- 🔐 Optional API Token authentication
-- 🌐 Multi-platform deployment support
-- 🖼️ Image generation support
-- 🎬📄 Video analysis, image and document parsing support
-- 💬 Built-in web chat interface
+- 🔄 **OpenAI API Compatible** - Drop-in replacement for OpenAI API
+- 🚀 **Streaming Support** - Server-Sent Events (SSE) for real-time responses
+- 🔐 **Token Authentication** - Optional API key protection
+- 🌐 **Multi-Platform** - Docker, Vercel, Netlify, Cloudflare Workers
+- 🖼️ **Image Generation** - Text-to-image capabilities
+- 🎬 **Multimodal** - Video analysis, image understanding, document parsing
+- 💬 **Web UI** - Built-in chat interface
+- 🔧 **Tool Calling** - MCP (Model Context Protocol) support
 
-## Deployment
+## 📋 Supported Models
 
-### Docker
+| Model ID | Name | Capabilities | Context Length |
+|----------|------|--------------|----------------|
+| `qwen3.5-plus` | Qwen3.5-Plus | Text, Vision, Document, Video, Audio, Thinking, Search | 1M tokens |
+| `qwen3.5-flash` | Qwen3.5-Flash | Text, Vision, Document, Video, Audio, Thinking, Search | 1M tokens |
+| `qwen3.5-397b-a17b` | Qwen3.5-397B-A17B | Text, Vision, Document, Video, Audio, Thinking, Search | 262K tokens |
+
+**All models support:**
+- 📝 Text generation
+- 👁️ Image understanding (vision)
+- 📄 Document parsing (PDF, DOCX, etc.)
+- 🎬 Video analysis
+- 🎵 Audio processing
+- 🧠 Thinking mode (chain-of-thought)
+- 🔍 Web search
+- 🛠️ Tool calling (MCP)
+
+**Default model:** `qwen3.5-plus`
+
+## 🚀 Quick Start
+
+### Docker (Recommended)
 
 ```bash
-# Build image
+# Pull from GitHub Container Registry
+docker pull ghcr.io/YOUR_USERNAME/qwen2api:latest
+
+# Run with docker-compose
+docker-compose up -d
+
+# Or run directly
+docker run -d \
+  -p 8765:7860 \
+  -e API_TOKENS=your_secret_token \
+  ghcr.io/YOUR_USERNAME/qwen2api:latest
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  qwen2api:
+    image: ghcr.io/YOUR_USERNAME/qwen2api:latest
+    ports:
+      - "8765:7860"
+    environment:
+      - API_TOKENS=your_secret_token
+      - CHAT_DETAIL_LOG=false
+    restart: unless-stopped
+```
+
+### Build from Source
+
+```bash
+# Clone repository
+git clone https://github.com/YOUR_USERNAME/qwen2api.git
+cd qwen2api
+
+# Build Docker image
 docker build -t qwen2api .
 
 # Run container
-docker run -d -p 8765:8765 -e API_TOKENS=your_token qwen2api
+docker run -d -p 8765:7860 -e API_TOKENS=your_token qwen2api
 ```
 
-### Hugging Face Spaces (Docker)
-
-1. Create a new **Docker** Space on Hugging Face.
-2. Push this repository to the Space.
-3. Optional: set `API_TOKENS` in Space Variables/Secrets.
-4. The app listens on port `7860` in container mode (already configured in `Dockerfile`).
+## 🌐 Alternative Deployments
 
 ### Vercel
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/smanx/qwen2api)
 
 1. Fork this repository
-2. Import the project in Vercel
-3. Optional: Set environment variable `API_TOKENS`
+2. Import to Vercel
+3. Set `API_TOKENS` environment variable (optional)
 
 ### Netlify
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/smanx/qwen2api)
 
 1. Fork this repository
-2. Import the project in Netlify
-3. Optional: Set environment variable `API_TOKENS`
+2. Import to Netlify
+3. Set `API_TOKENS` environment variable (optional)
 
 ### Cloudflare Workers
 
 ```bash
-# Install wrangler
 npm install -g wrangler
-
-# Login
 wrangler login
-
-# Deploy
 wrangler deploy
 ```
 
-Set the environment variable `API_TOKENS` in the Cloudflare Dashboard.
+Set `API_TOKENS` in Cloudflare Dashboard.
 
-## Public Services
-
-Two public services are available for testing:
-
-| Service URL | Platform |
-|-------------|----------|
-| `https://qwen2api-n.smanx.xx.kg` | Netlify |
-| ~~`https://qwen2api-v.smanx.xx.kg`~~ | ~~Vercel~~ (Usage limit exceeded, service stopped) |
-
-- No API Token required (leave key empty)
-- Self-deployment is recommended for more stable service
-
-## Important Notes
-
-- ✅ The `/v1/chat/completions` endpoint now supports attachments and multimodal message parts, including image/file/audio inputs.
-- ✅ Supports image understanding and document parsing workflows in chat requests.
-- ⚠️ Attachments are uploaded to Qwen OSS through the same workflow used by Qwen Web, so request latency increases when sending large files.
-
-### Limitations (Video URL / Large Files)
-
-- Video URL analysis and large-file analysis are **not supported on serverless function deployments** (e.g. Vercel / Netlify Functions / Cloudflare Workers).
-  These environments typically have strict limits on runtime, request body size, and filesystem/process access.
-- Video URL analysis requires `yt-dlp` to be installed on the host machine.
-  Use the Docker/local Express deployment if you need this feature.
-
-### Attachment Compatibility (OpenAI-style)
-
-You can use these message content part formats in `messages[].content` arrays:
-
-- `{"type":"text","text":"..."}` / `{"type":"input_text","input_text":"..."}`
-- `{"type":"image_url","image_url":{"url":"https://..."}}`
-- `{"type":"input_image","image_url":"https://..."}`
-- `{"type":"file","file_data":"data:...base64,...","filename":"a.pdf"}`
-- `{"type":"input_file","file_data":"<base64>","filename":"a.txt"}`
-- `{"type":"audio","file_data":"https://..."}` / `{"type":"input_audio", ...}`
-
-The proxy also accepts legacy message-level `files` / `attachments` arrays for compatibility.
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `API_TOKENS` | API keys, multiple keys separated by commas | No |
-| `CHAT_DETAIL_LOG` | Enable detailed chat/upload logs (`true/1/on/yes` to enable, default off) | No |
-| `JSON_BODY_LIMIT` | Express JSON body size limit (default `20mb`, only for local/Docker Express runtime) | No |
-
-> **Note:** Web search is now enabled by default for all models. The `ENABLE_SEARCH` variable has been deprecated.
-
-## Usage
-
-### API Endpoints
+## 📡 API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v1/models` | GET | Get model list |
-| `/v1/chat/completions` | POST | Chat completion |
-| `/v1/images/generations` | POST | Image generation |
-| `/chat` | GET | Built-in web chat UI |
+| `/v1/models` | GET | List available models |
+| `/v1/chat/completions` | POST | Chat completions (streaming & non-streaming) |
+| `/v1/images/generations` | POST | Generate images |
+| `/chat` | GET | Web chat interface |
 | `/` | GET | Health check |
 
-### Web Chat UI
+## 🔑 Environment Variables
 
-Open `https://your-domain/chat` in a browser to use the built-in chat page.
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `API_TOKENS` | API keys (comma-separated for multiple) | - | No |
+| `PORT` | Server port | 7860 | No |
+| `NODE_ENV` | Node environment | production | No |
+| `CHAT_DETAIL_LOG` | Enable detailed logging (`true`/`false`) | false | No |
+| `JSON_BODY_LIMIT` | Request body size limit | 10mb | No |
+| `MIN_VIDEO_RESOLUTION` | Minimum video resolution | 720 | No |
 
-- Supports streaming output, attachments, and an optional video URL (auto switches to video analysis when a URL is provided)
-- Logs panel can be toggled on/off; when enabled the request uses `/v1/chat/completions/log`
-- Language toggle (ZH/EN) is available in the top bar
+⚠️ **Security Warning:** Without `API_TOKENS`, the service is publicly accessible. Always set tokens for production deployments.
 
-### Request Examples
+## 📖 Usage Examples
 
+### cURL
+
+#### List Models
 ```bash
-# Get model list
-curl https://your-domain/v1/models \
+curl http://localhost:8765/v1/models \
   -H "Authorization: Bearer your_token"
+```
 
-# Chat completion
-curl https://your-domain/v1/chat/completions \
+#### Chat Completion (Non-streaming)
+```bash
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_token" \
   -d '{
     "model": "qwen3.5-plus",
-    "messages": [{"role": "user", "content": "Hello!"}],
+    "messages": [
+      {"role": "user", "content": "Hello! Introduce yourself."}
+    ]
+  }'
+```
+
+#### Chat Completion (Streaming)
+```bash
+curl http://localhost:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token" \
+  -d '{
+    "model": "qwen3.5-plus",
+    "messages": [
+      {"role": "user", "content": "Write a poem about AI"}
+    ],
     "stream": true
   }'
+```
 
-# Image generation (ratio string format)
-curl https://your-domain/v1/images/generations \
+#### Image Generation
+```bash
+curl http://localhost:8765/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token" \
+  -d '{
+    "prompt": "A cute cat playing with yarn",
+    "model": "qwen3.5-plus",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+```
+
+#### Multimodal (Image Understanding)
+```bash
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_token" \
   -d '{
     "model": "qwen3.5-plus",
-    "prompt": "A cute kitten in a garden",
-    "n": 1,
-    "size": "1:1",
-    "response_format": "url"
-  }'
-
-# Image generation (OpenAI size format)
-curl https://your-domain/v1/images/generations \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_token" \
-  -d '{
-    "model": "qwen3.5-plus",
-    "prompt": "A beautiful landscape",
-    "n": 1,
-    "size": "1024x1024",
-    "response_format": "b64_json"
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What is in this image?"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+      ]
+    }]
   }'
 ```
 
-### Image Generation Parameter Reference
-
-#### Request Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `model` | string | No | Model name, default: `qwen3.5-plus` |
-| `prompt` | string | Yes | Image description text |
-| `n` | number | No | Number of images to generate, default: 1, max: 10 |
-| `size` | string | No | Image size/ratio, default: `1:1` |
-| `response_format` | string | No | Response format: `url` (default) or `b64_json` |
-
-#### Supported size parameter formats
-
-**Format 1: Ratio string (recommended)**
-- `1:1` - Square
-- `16:9` - Widescreen (landscape)
-- `9:16` - Portrait (vertical)
-- `4:3` - Traditional ratio (landscape)
-- `3:4` - Traditional ratio (portrait)
-
-**Format 2: OpenAI compatible size format**
-- `1024x1024` - Automatically maps to closest ratio (1:1)
-- `1920x1080` - Automatically maps to closest ratio (16:9)
-- Any other width/height combination will automatically map to a supported ratio
-
-#### Response Formats
-
-**url format (default):**
-```json
-{
-  "created": 1234567890,
-  "data": [
-    {
-      "url": "https://example.com/image.png"
-    }
-  ]
-}
-```
-
-**b64_json format:**
-```json
-{
-  "created": 1234567890,
-  "data": [
-    {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ..."
-    }
-  ]
-}
-```
-
-### OpenAI SDK Examples
+### Python (OpenAI SDK)
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     api_key="your_token",
-    base_url="https://your-domain/v1"
+    base_url="http://localhost:8765/v1"
 )
 
+# Chat completion
 response = client.chat.completions.create(
     model="qwen3.5-plus",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ]
+)
+print(response.choices[0].message.content)
+
+# Streaming
+stream = client.chat.completions.create(
+    model="qwen3.5-plus",
+    messages=[{"role": "user", "content": "Tell me a story"}],
     stream=True
 )
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
 
-for chunk in response:
-    print(chunk.choices[0].delta.content, end="")
+# Image generation
+image = client.images.generate(
+    model="qwen3.5-plus",
+    prompt="A beautiful sunset",
+    n=1,
+    size="1024x1024"
+)
+print(image.data[0].url)
 ```
+
+### Node.js (OpenAI SDK)
 
 ```javascript
 import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: 'your_token',
-  baseURL: 'https://your-domain/v1'
+  baseURL: 'http://localhost:8765/v1'
 });
 
+// Chat completion
+const response = await client.chat.completions.create({
+  model: 'qwen3.5-plus',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+console.log(response.choices[0].message.content);
+
+// Streaming
 const stream = await client.chat.completions.create({
   model: 'qwen3.5-plus',
-  messages: [{ role: 'user', content: 'Hello!' }],
+  messages: [{ role: 'user', content: 'Tell me a story' }],
   stream: true
 });
 
 for await (const chunk of stream) {
   process.stdout.write(chunk.choices[0]?.delta?.content || '');
 }
+
+// Image generation
+const image = await client.images.generate({
+  model: 'qwen3.5-plus',
+  prompt: 'A beautiful sunset',
+  n: 1,
+  size: '1024x1024'
+});
+console.log(image.data[0].url);
 ```
 
-## Supported Models
+## 🌐 Web Chat Interface
 
-- `qwen3.5-plus`
-- `qwen3.5-flash`
-- `qwen3.5-turbo`
-- And other models supported by Qwen Chat
+Access the built-in chat UI at: `http://localhost:8765/chat`
 
-## Project Structure
+Features:
+- 💬 Real-time streaming responses
+- 📎 File attachments (images, documents, audio)
+- 🎬 Video URL analysis
+- 📊 Request/response logging panel
+- 🌍 Multi-language support (EN/CN)
 
+## ⚠️ Limitations
+
+### Video Analysis & Large Files
+
+**Not supported on serverless platforms** (Vercel, Netlify Functions, Cloudflare Workers):
+- Video URL analysis requires `yt-dlp` (only available in Docker/local deployments)
+- Large file uploads are limited by serverless constraints
+- Use Docker deployment for full functionality
+
+### Supported Platforms by Feature
+
+| Feature | Docker | Vercel | Netlify | CF Workers |
+|---------|--------|--------|---------|------------|
+| Text Chat | ✅ | ✅ | ✅ | ✅ |
+| Image Understanding | ✅ | ✅ | ✅ | ✅ |
+| Document Parsing | ✅ | ✅ | ✅ | ✅ |
+| Image Generation | ✅ | ✅ | ✅ | ✅ |
+| Video Analysis | ✅ | ❌ | ❌ | ❌ |
+| Large Files (>10MB) | ✅ | ❌ | ❌ | ❌ |
+
+## 🔧 Advanced Configuration
+
+### Multimodal Message Format
+
+The API supports OpenAI-compatible multimodal messages:
+
+```json
+{
+  "messages": [{
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "Describe this image"},
+      {"type": "image_url", "image_url": {"url": "https://..."}}
+    ]
+  }]
+}
 ```
-qwen2api/
-├── core.js              # Core business logic
-├── index.js             # Docker / Local entry point
-├── api/
-│   └── index.js         # Vercel entry point
-├── netlify/
-│   └── functions/
-│       └── api.js       # Netlify entry point
-├── worker.js            # Cloudflare Workers entry point
-├── Dockerfile
-├── vercel.json
-├── netlify.toml
-└── wrangler.toml
-```
 
-## Local Development
+Supported content types:
+- `text` - Plain text
+- `image_url` - Image URL or base64
+- `file` - Document with base64 data
+- `audio` - Audio file URL or base64
 
-```bash
-# Install dependencies
-npm install
+### Custom Headers
 
-# Start development server
-npm run dev
+The service forwards these headers to Qwen API:
+- `bx-ua` - Browser user agent fingerprint
+- `bx-umidtoken` - Unique device token
+- `bx-v` - Baxia version
 
-# Server runs at http://localhost:8765
-```
+## 🤝 Contributing
 
-## Disclaimer
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-This project is for learning and testing purposes only. Do not use it in production or commercial environments. Users are solely responsible for any consequences arising from the use of this project, and the project author assumes no liability.
+## 📄 License
 
-## License
+ISC License
 
-MIT
+## 🔗 Links
+
+- [Qwen Official](https://qwen.ai/)
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
+- [GitHub Repository](https://github.com/smanx/qwen2api)
+
+## ⭐ Star History
+
+If you find this project useful, please consider giving it a star!
